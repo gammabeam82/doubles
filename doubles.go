@@ -109,13 +109,16 @@ func calculateHash(files <-chan string, results chan<- struct{}) {
 			log.Fatal(colors.Red(err))
 		}
 
-		file.Close()
+		if err := file.Close(); err != nil {
+			log.Println(err)
+		}
+
 		images.AddHash(hash.Sum(nil), filename)
 		results <- struct{}{}
 	}
 }
 
-func getFilesList(dir string) error {
+func getFilesList(dir string) {
 	defer wg.Done()
 
 	visit := func(path string, info os.FileInfo, err error) error {
@@ -134,7 +137,11 @@ func getFilesList(dir string) error {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					log.Println(err)
+				}
+			}()
 			isImg, err := isImage(file)
 			if err != nil {
 				return err
@@ -146,8 +153,10 @@ func getFilesList(dir string) error {
 		return nil
 	}
 
-	filepath.Walk(dir, visit)
-	return nil
+	err := filepath.Walk(dir, visit)
+	if err != nil {
+		log.Fatal(colors.Red(err))
+	}
 }
 
 func deleteAllExceptFirst(doubles *map[string]Doubles) (int, error) {
@@ -174,7 +183,9 @@ func run() {
 		dir = *fdir
 	} else {
 		fmt.Print("Enter path to directory: ")
-		fmt.Scan(&dir)
+		if _, err := fmt.Scan(&dir); err != nil {
+			log.Fatal(colors.Red(err))
+		}
 	}
 
 	if !isPathValid(dir) {
@@ -182,12 +193,10 @@ func run() {
 	}
 
 	fmt.Println("Scanning directory... ")
+
 	wg.Add(1)
-	err := getFilesList(dir)
+	getFilesList(dir)
 	wg.Wait()
-	if err != nil {
-		log.Fatal(colors.Red(err))
-	}
 
 	length := images.Length()
 	fmt.Printf("Images found: %d\n", colors.Green(length))
@@ -217,7 +226,9 @@ func run() {
 
 	for i := 1; i <= length; i++ {
 		<-results
-		bar.Add(1)
+		if err := bar.Add(1); err != nil {
+			log.Println(err)
+		}
 	}
 
 	doubles := images.FindDoubles()
