@@ -9,48 +9,74 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	colors "github.com/logrusorgru/aurora"
 	"github.com/schollz/progressbar"
 )
 
-var imageTypes = [...]string{
-	"image/jpeg",
-	"image/png",
+type Doubles []string
+
+func (d Doubles) String() string {
+	var res string
+	for k, v := range d {
+		res += v
+		if k != len(d)-1 {
+			res += fmt.Sprintf("%s", colors.Red("|"))
+		}
+	}
+	return res
 }
 
-type File struct {
-	name string
-	hash []byte
-	size int64
+type ImageCollection struct {
+	mux    sync.Mutex
+	files  []string
+	hashes map[string][]string
 }
 
-func (f File) Hash() string {
-	return fmt.Sprintf("%x", f.hash)
+func (i *ImageCollection) Length() int {
+	return len(i.files)
 }
 
-func (f File) Name() string {
-	return f.name
+func (i *ImageCollection) AddFile(filename string) {
+	i.mux.Lock()
+	defer i.mux.Unlock()
+	i.files = append(i.files, filename)
 }
 
-func (f File) String() string {
-	return fmt.Sprintf(
-		"\nSize: %-4dkB\tName: %s",
-		colors.Cyan(f.size/1024),
-		colors.Green(f.name),
-	)
+func (i *ImageCollection) AddHash(hash []byte, filename string) {
+	i.mux.Lock()
+	defer i.mux.Unlock()
+	filehash := fmt.Sprintf("%x", hash)
+	i.hashes[filehash] = append(i.hashes[filehash], filename)
 }
 
-func findDoubles(files *map[string][]File) map[string][]File {
-	doubles := make(map[string][]File)
-	for key, value := range *files {
-		if len(value) > 1 {
-			doubles[key] = value
+func (i *ImageCollection) FindDoubles() map[string]Doubles {
+	doubles := make(map[string]Doubles)
+	for k, v := range i.hashes {
+		if len(v) > 1 {
+			doubles[k] = v
 		}
 	}
 	return doubles
 }
+
+func NewImageCollection() *ImageCollection {
+	return &ImageCollection{
+		hashes: make(map[string][]string),
+	}
+}
+
+var (
+	imageTypes = [...]string{
+		"image/jpeg",
+		"image/png",
+		"image/gif",
+	}
+	wg     sync.WaitGroup
+	images = NewImageCollection()
+)
 
 func isImage(file *os.File) (bool, error) {
 	buffer := make([]byte, 512)
@@ -71,14 +97,9 @@ func isPathValid(path string) bool {
 	return err == nil && st.IsDir()
 }
 
-func calculateHash(files <-chan string, results chan<- File) {
+func calculateHash(files <-chan string, results chan<- struct{}) {
 	for filename := range files {
 		file, err := os.Open(filename)
-		if err != nil {
-			log.Fatal(colors.Red(err))
-		}
-
-		stat, err := file.Stat()
 		if err != nil {
 			log.Fatal(colors.Red(err))
 		}
@@ -89,15 +110,51 @@ func calculateHash(files <-chan string, results chan<- File) {
 		}
 
 		file.Close()
-		results <- File{filename, hash.Sum(nil), stat.Size()}
+		images.AddHash(hash.Sum(nil), filename)
+		results <- struct{}{}
 	}
 }
 
-func deleteAllExceptFirst(doubles *map[string][]File) (int, error) {
+func getFilesList(dir string) error {
+	defer wg.Done()
+
+	visit := func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if info.IsDir() && path != dir {
+			wg.Add(1)
+			go getFilesList(path)
+			return filepath.SkipDir
+		}
+
+		if !info.IsDir() && info.Mode().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			isImg, err := isImage(file)
+			if err != nil {
+				return err
+			}
+			if isImg {
+				images.AddFile(path)
+			}
+		}
+		return nil
+	}
+
+	filepath.Walk(dir, visit)
+	return nil
+}
+
+func deleteAllExceptFirst(doubles *map[string]Doubles) (int, error) {
 	num := 0
 	for _, list := range *doubles {
-		for _, file := range list[1:] {
-			if err := os.Remove(file.Name()); err != nil {
+		for _, filename := range list[1:] {
+			if err := os.Remove(filename); err != nil {
 				return 0, err
 			}
 			num++
@@ -106,44 +163,11 @@ func deleteAllExceptFirst(doubles *map[string][]File) (int, error) {
 	return num, nil
 }
 
-func getFilesList(dir string) ([]string, error) {
-	var files []string
-
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return nil
-		}
-		file, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		isImg, err := isImage(file)
-		if err != nil {
-			return err
-		}
-		if isImg {
-			files = append(files, path)
-		}
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return files, nil
-}
-
 func run() {
 	var dir string
 
 	fdir := flag.String("dir", "", "Path to directory")
-	delete := flag.Bool("delete", false, "Delete doubles")
+	del := flag.Bool("delete", false, "Delete doubles")
 	flag.Parse()
 
 	if len(*fdir) > 1 {
@@ -158,16 +182,22 @@ func run() {
 	}
 
 	fmt.Println("Scanning directory... ")
-	files, err := getFilesList(dir)
+	wg.Add(1)
+	err := getFilesList(dir)
+	wg.Wait()
 	if err != nil {
 		log.Fatal(colors.Red(err))
 	}
 
-	length := len(files)
+	length := images.Length()
 	fmt.Printf("Images found: %d\n", colors.Green(length))
+
+	if length == 0 {
+		return
+	}
+
 	jobs := make(chan string, length)
-	results := make(chan File, length)
-	rs := make(map[string][]File)
+	results := make(chan struct{}, length)
 
 	defer func() {
 		close(jobs)
@@ -181,23 +211,23 @@ func run() {
 		go calculateHash(jobs, results)
 	}
 
-	for _, file := range files {
-		jobs <- file
+	for _, filename := range images.files {
+		jobs <- filename
 	}
 
 	for i := 1; i <= length; i++ {
-		file := <-results
+		<-results
 		bar.Add(1)
-		hash := file.Hash()
-		rs[hash] = append(rs[hash], file)
 	}
 
-	doubles := findDoubles(&rs)
+	doubles := images.FindDoubles()
+	fmt.Printf("\n\nDoubles found: %d\n", colors.Green(len(doubles)))
+
 	for _, list := range doubles {
 		fmt.Println(list, "\n")
 	}
 
-	if *delete == true {
+	if *del == true {
 		num, err := deleteAllExceptFirst(&doubles)
 		if err != nil {
 			log.Fatal(colors.Red(err))
