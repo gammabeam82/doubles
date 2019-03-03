@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/md5"
+	. "doubles/types"
+	"doubles/utils"
 	"flag"
 	"fmt"
 	"io"
@@ -16,60 +18,8 @@ import (
 	"github.com/schollz/progressbar"
 )
 
-type Doubles []string
-
-func (d Doubles) String() string {
-	var res string
-	for k, v := range d {
-		res += v
-		if k != len(d)-1 {
-			res += fmt.Sprintf("%s", colors.Red("|"))
-		}
-	}
-	return res
-}
-
-type ImageCollection struct {
-	mux    sync.Mutex
-	files  []string
-	hashes map[string][]string
-}
-
-func (i *ImageCollection) Length() int {
-	return len(i.files)
-}
-
-func (i *ImageCollection) AddFile(filename string) {
-	i.mux.Lock()
-	defer i.mux.Unlock()
-	i.files = append(i.files, filename)
-}
-
-func (i *ImageCollection) AddHash(hash []byte, filename string) {
-	i.mux.Lock()
-	defer i.mux.Unlock()
-	filehash := fmt.Sprintf("%x", hash)
-	i.hashes[filehash] = append(i.hashes[filehash], filename)
-}
-
-func (i *ImageCollection) FindDoubles() map[string]Doubles {
-	doubles := make(map[string]Doubles)
-	for k, v := range i.hashes {
-		if len(v) > 1 {
-			doubles[k] = v
-		}
-	}
-	return doubles
-}
-
-func NewImageCollection() *ImageCollection {
-	return &ImageCollection{
-		hashes: make(map[string][]string),
-	}
-}
-
 var (
-	imageTypes = [...]string{
+	imageTypes = []string{
 		"image/jpeg",
 		"image/png",
 		"image/gif",
@@ -84,12 +34,7 @@ func isImage(file *os.File) (bool, error) {
 		return false, err
 	}
 	mimeType := http.DetectContentType(buffer)
-	for _, t := range imageTypes {
-		if t == mimeType {
-			return true, nil
-		}
-	}
-	return false, nil
+	return utils.InArray(mimeType, imageTypes), nil
 }
 
 func isPathValid(path string) bool {
@@ -220,7 +165,7 @@ func run() {
 		go calculateHash(jobs, results)
 	}
 
-	for _, filename := range images.files {
+	for _, filename := range images.Files() {
 		jobs <- filename
 	}
 
@@ -235,7 +180,7 @@ func run() {
 	fmt.Printf("\n\nDoubles found: %d\n", colors.Green(len(doubles)))
 
 	for _, list := range doubles {
-		fmt.Println(list, "\n")
+		fmt.Println(list)
 	}
 
 	if *del == true {
