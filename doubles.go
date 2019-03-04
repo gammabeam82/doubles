@@ -10,7 +10,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,8 +26,9 @@ var (
 		"image/png",
 		"image/gif",
 	}
-	wg     sync.WaitGroup
-	images = NewImageCollection()
+	skipDirs []string
+	wg       sync.WaitGroup
+	images   = NewImageCollection()
 )
 
 func isImage(file *os.File) (bool, error) {
@@ -66,19 +69,23 @@ func calculateHash(files <-chan string, results chan<- struct{}) {
 func getFilesList(dir string) {
 	defer wg.Done()
 
-	visit := func(path string, info os.FileInfo, err error) error {
+	visit := func(currentPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if info.IsDir() && path != dir {
+		if utils.InArray(path.Base(currentPath), skipDirs) {
+			return filepath.SkipDir
+		}
+
+		if info.IsDir() && currentPath != dir {
 			wg.Add(1)
-			go getFilesList(path)
+			go getFilesList(currentPath)
 			return filepath.SkipDir
 		}
 
 		if !info.IsDir() && info.Mode().IsRegular() {
-			file, err := os.Open(path)
+			file, err := os.Open(currentPath)
 			if err != nil {
 				return err
 			}
@@ -92,7 +99,7 @@ func getFilesList(dir string) {
 				return err
 			}
 			if isImg {
-				images.AddFile(path)
+				images.AddFile(currentPath)
 			}
 		}
 		return nil
@@ -122,7 +129,10 @@ func run() {
 
 	fdir := flag.String("dir", "", "Path to directory")
 	del := flag.Bool("delete", false, "Delete doubles")
+	skip := flag.String("skip", "", "Comma separated list of subdirectories to skip")
 	flag.Parse()
+
+	skipDirs = append(skipDirs, strings.Split(*skip, ",")...)
 
 	if len(*fdir) > 1 {
 		dir = *fdir

@@ -1,8 +1,8 @@
 package utils
 
-func InArray(needle string, array []string) bool {
+func InArray(search string, array []string) bool {
 	for _, v := range array {
-		if v == needle {
+		if v == search {
 			return true
 		}
 	}
