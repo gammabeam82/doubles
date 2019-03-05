@@ -4,9 +4,11 @@ import (
 	"crypto/md5"
 	. "doubles/types"
 	"doubles/utils"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -26,9 +28,8 @@ var (
 		"image/png",
 		"image/gif",
 	}
-	skipDirs []string
-	wg       sync.WaitGroup
-	images   = NewImageCollection()
+	wg     sync.WaitGroup
+	images = NewImageCollection()
 )
 
 func isImage(file *os.File) (bool, error) {
@@ -66,7 +67,7 @@ func calculateHash(files <-chan string, results chan<- struct{}) {
 	}
 }
 
-func getFilesList(dir string) {
+func scan(dir string, skip []string) {
 	defer wg.Done()
 
 	visit := func(currentPath string, info os.FileInfo, err error) error {
@@ -74,13 +75,13 @@ func getFilesList(dir string) {
 			return err
 		}
 
-		if utils.InArray(path.Base(currentPath), skipDirs) {
+		if utils.InArray(path.Base(currentPath), skip) {
 			return filepath.SkipDir
 		}
 
 		if info.IsDir() && currentPath != dir {
 			wg.Add(1)
-			go getFilesList(currentPath)
+			go scan(currentPath, skip)
 			return filepath.SkipDir
 		}
 
@@ -124,33 +125,37 @@ func deleteAllExceptFirst(doubles *map[string]Doubles) (int, error) {
 	return num, nil
 }
 
-func run() {
-	var dir string
+func getCliOptions() *Options {
+	options := &Options{}
 
-	fdir := flag.String("dir", "", "Path to directory")
-	del := flag.Bool("delete", false, "Delete doubles")
+	flag.StringVar(&options.Directory, "dir", "", "Path to directory")
+	flag.BoolVar(&options.Delete, "delete", false, "Delete doubles")
+	flag.BoolVar(&options.Dump, "dump", false, "Save dump to file")
 	skip := flag.String("skip", "", "Comma separated list of subdirectories to skip")
 	flag.Parse()
+	options.Skip = strings.Split(*skip, ",")
 
-	skipDirs = append(skipDirs, strings.Split(*skip, ",")...)
-
-	if len(*fdir) > 1 {
-		dir = *fdir
-	} else {
+	if len(options.Directory) < 1 {
 		fmt.Print("Enter path to directory: ")
-		if _, err := fmt.Scan(&dir); err != nil {
+		if _, err := fmt.Scan(&options.Directory); err != nil {
 			log.Fatal(colors.Red(err))
 		}
 	}
 
-	if !isPathValid(dir) {
+	return options
+}
+
+func run() {
+	options := getCliOptions()
+
+	if !isPathValid(options.Directory) {
 		log.Fatal(colors.Red("Invalid path"))
 	}
 
 	fmt.Println("Scanning directory... ")
 
 	wg.Add(1)
-	getFilesList(dir)
+	scan(options.Directory, options.Skip)
 	wg.Wait()
 
 	length := images.Length()
@@ -189,11 +194,18 @@ func run() {
 	doubles := images.FindDoubles()
 	fmt.Printf("\n\nDoubles found: %d\n", colors.Green(len(doubles)))
 
+	if options.Dump {
+		data, _ := json.MarshalIndent(doubles, "", "\t")
+		if err := ioutil.WriteFile("dump.json", data, 0644); err != nil {
+			log.Println(err)
+		}
+	}
+
 	for _, list := range doubles {
 		fmt.Println(list)
 	}
 
-	if *del == true {
+	if options.Delete {
 		num, err := deleteAllExceptFirst(&doubles)
 		if err != nil {
 			log.Fatal(colors.Red(err))

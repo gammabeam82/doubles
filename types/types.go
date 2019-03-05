@@ -20,6 +20,13 @@ func (d Doubles) String() string {
 	return res
 }
 
+type Options struct {
+	Directory string
+	Delete    bool
+	Dump      bool
+	Skip      []string
+}
+
 type ImageCollection struct {
 	mux    sync.Mutex
 	files  []string
