@@ -1,11 +1,10 @@
-package main
+package doubles
 
 import (
 	"crypto/md5"
 	. "doubles/types"
 	"doubles/utils"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -14,9 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 	"sync"
-	"time"
 
 	colors "github.com/logrusorgru/aurora"
 	"github.com/schollz/progressbar"
@@ -125,29 +122,7 @@ func deleteAllExceptFirst(doubles *map[string]Doubles) (int, error) {
 	return num, nil
 }
 
-func getCliOptions() *Options {
-	options := &Options{}
-
-	flag.StringVar(&options.Directory, "dir", "", "Path to directory")
-	flag.BoolVar(&options.Delete, "delete", false, "Delete doubles")
-	flag.BoolVar(&options.Dump, "dump", false, "Save dump to file")
-	skip := flag.String("skip", "", "Comma separated list of subdirectories to skip")
-	flag.Parse()
-	options.Skip = strings.Split(*skip, ",")
-
-	if len(options.Directory) < 1 {
-		fmt.Print("Enter path to directory: ")
-		if _, err := fmt.Scan(&options.Directory); err != nil {
-			log.Fatal(colors.Red(err))
-		}
-	}
-
-	return options
-}
-
-func run() {
-	options := getCliOptions()
-
+func Run(options *Options) {
 	if !isPathValid(options.Directory) {
 		log.Fatal(colors.Red("Invalid path"))
 	}
@@ -212,13 +187,4 @@ func run() {
 		}
 		fmt.Printf("\n\nDeleted %d file(s)\n", colors.Bold(colors.Red(num)))
 	}
-}
-
-func main() {
-	start := time.Now()
-
-	run()
-
-	end := time.Since(start)
-	fmt.Printf("\nDone in: %s\n", colors.Green(end))
 }

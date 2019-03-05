@@ -1,2 +1,2 @@
 build:
-	go build -o bin/doubles doubles.go
+	go build -o bin/doubles main.go
