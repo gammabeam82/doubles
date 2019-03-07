@@ -20,16 +20,11 @@ import (
 )
 
 var (
-	imageTypes = []string{
-		"image/jpeg",
-		"image/png",
-		"image/gif",
-	}
 	wg     sync.WaitGroup
 	images = NewImageCollection()
 )
 
-func isImage(file *os.File) (bool, error) {
+func isImage(file *os.File, imageTypes []string) (bool, error) {
 	buffer := make([]byte, 512)
 	if _, err := file.Read(buffer); err != nil {
 		return false, err
@@ -54,17 +49,14 @@ func calculateHash(files <-chan string, results chan<- struct{}) {
 		if _, err := io.Copy(hash, file); err != nil {
 			log.Fatal(colors.Red(err))
 		}
-
-		if err := file.Close(); err != nil {
-			log.Println(err)
-		}
+		file.Close()
 
 		images.AddHash(hash.Sum(nil), filename)
 		results <- struct{}{}
 	}
 }
 
-func scan(dir string, skip []string) {
+func scan(dir string, skip, imageTypes []string) {
 	defer wg.Done()
 
 	visit := func(currentPath string, info os.FileInfo, err error) error {
@@ -78,7 +70,7 @@ func scan(dir string, skip []string) {
 
 		if info.IsDir() && currentPath != dir {
 			wg.Add(1)
-			go scan(currentPath, skip)
+			go scan(currentPath, skip, imageTypes)
 			return filepath.SkipDir
 		}
 
@@ -87,12 +79,9 @@ func scan(dir string, skip []string) {
 			if err != nil {
 				return err
 			}
-			defer func() {
-				if err := file.Close(); err != nil {
-					log.Println(err)
-				}
-			}()
-			isImg, err := isImage(file)
+			defer file.Close()
+
+			isImg, err := isImage(file, imageTypes)
 			if err != nil {
 				return err
 			}
@@ -122,7 +111,7 @@ func deleteAllExceptFirst(doubles *map[string]Doubles) (int, error) {
 	return num, nil
 }
 
-func Run(options *Options) {
+func Run(options *Options, config *Config) {
 	if !isPathValid(options.Directory) {
 		log.Fatal(colors.Red("Invalid path"))
 	}
@@ -130,7 +119,7 @@ func Run(options *Options) {
 	fmt.Println("Scanning directory... ")
 
 	wg.Add(1)
-	scan(options.Directory, options.Skip)
+	scan(options.Directory, options.Skip, config.ImageTypes)
 	wg.Wait()
 
 	length := images.Length()
@@ -166,8 +155,8 @@ func Run(options *Options) {
 		}
 	}
 
-	doubles := images.FindDoubles()
-	fmt.Printf("\n\nDoubles found: %d\n", colors.Green(len(doubles)))
+	num, doubles := images.FindDoubles()
+	fmt.Printf("\n\nDoubles found: %d\n", num)
 
 	if options.Dump {
 		data, _ := json.MarshalIndent(doubles, "", "\t")

@@ -27,6 +27,10 @@ type Options struct {
 	Skip      []string
 }
 
+type Config struct {
+	ImageTypes []string `json:"image_types"`
+}
+
 type ImageCollection struct {
 	mux    sync.Mutex
 	files  []string
@@ -54,14 +58,16 @@ func (i *ImageCollection) AddHash(hash []byte, filename string) {
 	i.hashes[filehash] = append(i.hashes[filehash], filename)
 }
 
-func (i *ImageCollection) FindDoubles() map[string]Doubles {
+func (i *ImageCollection) FindDoubles() (int, map[string]Doubles) {
+	num := 0
 	doubles := make(map[string]Doubles)
 	for k, v := range i.hashes {
 		if len(v) > 1 {
 			doubles[k] = v
+			num += len(v)
 		}
 	}
-	return doubles
+	return num, doubles
 }
 
 func NewImageCollection() *ImageCollection {
