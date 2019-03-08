@@ -1,18 +1,47 @@
 package config
 
 import (
-	. "doubles/types"
 	"encoding/json"
+	"encoding/xml"
 	"io/ioutil"
 )
 
-func LoadConfig(filename string, config *Config) error {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
+type Loader func(c *Config) error
+
+type Config struct {
+	ImageTypes []string `json:"image_types" xml:"image-type"`
+}
+
+func (c *Config) Load(loader Loader) error {
+	return loader(c)
+}
+
+func NewConfig() *Config {
+	return &Config{}
+}
+
+func NewJsonLoader(filename string) Loader {
+	return func(conf *Config) error {
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			return err
+		}
+		if err = json.Unmarshal(data, conf); err != nil {
+			return err
+		}
+		return nil
 	}
-	if err = json.Unmarshal(data, config); err != nil {
-		return err
+}
+
+func NewXMLLoader(filename string) Loader {
+	return func(conf *Config) error {
+		data, err := ioutil.ReadFile(filename)
+		if err != nil {
+			return err
+		}
+		if err = xml.Unmarshal(data, conf); err != nil {
+			return err
+		}
+		return nil
 	}
-	return nil
 }

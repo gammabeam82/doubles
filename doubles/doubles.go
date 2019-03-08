@@ -2,6 +2,7 @@ package doubles
 
 import (
 	"crypto/md5"
+	. "doubles/config"
 	. "doubles/types"
 	"doubles/utils"
 	"encoding/json"

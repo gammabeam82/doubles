@@ -1,9 +1,8 @@
 package main
 
 import (
-	"doubles/config"
+	. "doubles/config"
 	"doubles/doubles"
-	. "doubles/types"
 	"doubles/utils"
 	"fmt"
 	"log"
@@ -17,8 +16,8 @@ const pathToConfig string = "./config/config.json"
 var conf *Config
 
 func init() {
-	conf = &Config{}
-	if err := config.LoadConfig(pathToConfig, conf); err != nil {
+	conf = NewConfig()
+	if err := conf.Load(NewJsonLoader(pathToConfig)); err != nil {
 		log.Fatal(colors.Red(err))
 	}
 }

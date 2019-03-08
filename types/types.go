@@ -27,10 +27,6 @@ type Options struct {
 	Skip      []string
 }
 
-type Config struct {
-	ImageTypes []string `json:"image_types"`
-}
-
 type ImageCollection struct {
 	mux    sync.Mutex
 	files  []string

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<image-types>
+    <image-type>image/png</image-type>
+    <image-type>image/jpeg</image-type>
+    <image-type>image/gif</image-type>
+</image-types>
