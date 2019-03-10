@@ -3,5 +3,6 @@
     "image/jpeg",
     "image/png",
     "image/gif"
-  ]
+  ],
+  "dump_file": "dump.json"
 }

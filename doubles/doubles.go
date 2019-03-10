@@ -161,7 +161,7 @@ func Run(options *Options, config *Config) {
 
 	if options.Dump {
 		data, _ := json.MarshalIndent(doubles, "", "\t")
-		if err := ioutil.WriteFile("dump.json", data, 0644); err != nil {
+		if err := ioutil.WriteFile(config.DumpFile, data, 0644); err != nil {
 			log.Println(err)
 		}
 	}
